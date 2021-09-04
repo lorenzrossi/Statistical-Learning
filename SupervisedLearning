@@ -9,3 +9,6 @@ output:
     latex_engine: xelatex
 abstract: I'll investigate what are the main factors that contribute to economic freedom
 ---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
