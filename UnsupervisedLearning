@@ -1,0 +1,248 @@
+---
+title: "UnsupervisedLearning"
+author: "Lorenzo Rossi"
+date: "8/9/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+```{r setup, include=FALSE}
+library(car)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(readxl)
+library(ggpubr)
+library(ggplot2)
+library(Hmisc)
+library(olsrr)
+library(tidyverse)
+library(caret)
+library(Metrics)
+library(corrplot)
+library(glmnet)
+library(leaps)
+library(class)
+library(selectiveInference)
+library(RCurl)
+library(tree)
+library(ISLR)
+library(plot3D)
+library(sjPlot)
+library(plotly)
+library(haven)
+library(corrplot)
+library(plyr)
+library(PerformanceAnalytics)
+library(gbm)
+library(randomForest)
+library(FactoMineR)
+library(factoextra)
+library(cluster)
+library(gridExtra)
+```
+
+#pca
+```{r pressure, echo=FALSE}
+df <- read_excel("stroke.xlsx")
+dataset <- data.frame(df, row.names = 1)
+dataset <- dataset[,2:11]
+dataset <- scale(dataset)
+```
+
+#Normalization
+```{r pressure, echo=FALSE}
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x))) }
+
+dataset <- scale(dataset)
+```
+```{r pressure, echo=FALSE}
+n <- nrow(dataset)
+p <- ncol(dataset)
+
+M <- colMeans(dataset)
+sigma <- apply(dataset,2,sd)
+descriptive<-round(cbind(M,sigma),2)
+descriptive
+
+#create correlation matrix
+rho <- cor(dataset)
+
+autoval <- eigen(rho)$values
+autovec <- eigen(rho)$vectors
+
+pvarsp = autoval/p
+pvarspcum = cumsum(pvarsp)
+pvarsp
+
+tab<-round(cbind(autoval,pvarsp*100,pvarspcum*100),3)
+colnames(tab)<-c("eigenval","%var","%cumvar")
+tab
+```
+
+#scree diagram to select the components
+```{r pressure, echo=FALSE}
+plot(autoval,type="b",main="Scree Diagram", xlab="Number of Component", ylab="Eigenvalues")
+abline(h=1,lwd=3,col="red")
+
+eigen(rho)$vectors[,1:4]
+```
+
+#we investigate what is explained by the components
+```{r pressure, echo=FALSE}
+comp<-round(cbind(
+  -eigen(rho)$vectors[,1]*sqrt(autoval[1]),
+  -eigen(rho)$vectors[,2]*sqrt(autoval[2]),
+  -eigen(rho)$vectors[,3]*sqrt(autoval[3]),
+  -eigen(rho)$vectors[,4]*sqrt(autoval[4])
+),3)
+
+rownames(comp)<-row.names(descriptive)
+colnames(comp)<-c("comp1","comp2","comp3","comp4")
+comp
+
+
+communality<-comp[,1]^2+comp[,2]^2+comp[,3]^2+comp[,4]^2
+comp<-cbind(comp,communality)
+comp
+```
+
+```{r pressure, echo=FALSE}
+#part 2 - three components
+eigen(rho)$vectors[,1:3]
+
+#we investigate what is explained by the components
+comp<-round(cbind(
+  -eigen(rho)$vectors[,1]*sqrt(autoval[1]),
+  -eigen(rho)$vectors[,2]*sqrt(autoval[2]),
+  -eigen(rho)$vectors[,3]*sqrt(autoval[3])
+),3)
+
+rownames(comp)<-row.names(descriptive)
+
+colnames(comp)<-c("comp1","comp2","comp3")
+communality<-comp[,1]^2+comp[,2]^2+comp[,3]^2
+comp<-cbind(comp,communality)
+comp
+```
+
+#calculate the scores for the selected components and graph them
+#calculate components for each unit
+```{r pressure, echo=FALSE}
+score <- dataset%*%autovec[,1:3]
+round(score,3)
+
+
+#score plot
+scorez<-round(cbind
+              (-score[,1]/sqrt(autoval[1]),
+                score[,2]/sqrt(autoval[2]),
+                score[,3]/sqrt(autoval[3])),2)
+
+x <- scorez[,1]
+y <- scorez[,2]
+z <- scorez[,3]
+```
+
+#plots
+```{r pressure, echo=FALSE}
+scatter3D(x, y, z, colvar = dataset[,1],
+          xlab = "comp1", ylab = "comp2", zlab = "comp3",
+          main = "PCA - 4 components",
+          bty = "g", ticktype = "detailed",
+          theta = 15, phi = 20, col = gg.col(100),
+          clab = "Stroke", d = 2, type = "h",
+          pch = 19, cex = 0.5)
+
+compz<-round(cbind
+             (-comp[,1]/sqrt(autoval[1]),
+               comp[,2]/sqrt(autoval[2]),
+               comp[,3]/sqrt(autoval[3])),2)
+x <- compz[,1]
+y <- compz[,2]
+z <- compz[,3]
+
+scatter3D(x,y,z,
+          col = "red",add = TRUE,
+          pch = 19, cex = 0.8)
+```
+
+#alternative way
+```{r pressure, echo=FALSE}
+dt2 <- prcomp(dataset)
+
+fviz_eig(dt2)
+
+fviz_pca_var(dt2,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = F     # Avoid text overlapping
+)
+
+```
+#kmeans
+
+#from the previous scaled dataset
+
+```{r pressure, echo=FALSE}
+k2 <- kmeans(dataset, centers = 2, nstart = 25)
+str(k2)
+
+fviz_cluster(k2, data = dataset)
+```
+```{r pressure, echo=FALSE}
+k3 <- kmeans(dataset, centers = 3, nstart = 25)
+k4 <- kmeans(dataset, centers = 4, nstart = 25)
+k5 <- kmeans(dataset, centers = 5, nstart = 25)
+
+# plots to compare
+p1 <- fviz_cluster(k2, geom = "point", data = dataset) + ggtitle("k = 2")
+p2 <- fviz_cluster(k3, geom = "point", data = dataset) + ggtitle("k = 3")
+p3 <- fviz_cluster(k4, geom = "point", data = dataset) + ggtitle("k = 4")
+p4 <- fviz_cluster(k5, geom = "point", data = dataset) + ggtitle("k = 5")
+
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+
+
+#finding the best 
+```{r pressure, echo=FALSE}
+set.seed(123)
+
+# function to compute total within-cluster sum of square 
+wss <- function(k) {
+  kmeans(dataset, k, nstart = 10 )$tot.withinss
+}
+
+# Compute and plot wss for k = 1 to k = 15
+k.values <- 1:15
+
+# extract wss for 2-15 clusters
+
+set.seed(123)
+fviz_nbclust(df, kmeans, method = "wss")
+
+#2-3 optimal kluster
+```
+
+
+```{r pressure, echo=FALSE}
+fviz_nbclust(df, kmeans, method = "silhouette") #silhouette
+```
+
+
+```{r pressure, echo=FALSE}
+set.seed(123)
+final <- kmeans(dataset, 2, nstart = 25)
+final2 <- kmeans(dataset, 3, nstart = 25)
+
+f1 <- fviz_cluster(final, data = dataset, geom = "point") 
+f2 <- fviz_cluster(final2, data = dataset, geom = "point")
+
+grid.arrange(f1, f2, nrow = 2)
+```
