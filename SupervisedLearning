@@ -1,14 +1,277 @@
 ---
-title: "Statistical Learning Project - Supervised Learning"
+title: "Supervised Learning"
 author: "Lorenzo Rossi"
-date: "8/31/2021"
-output:
-  html_document:
-    df_print: paged
-  pdf_document:
-    latex_engine: xelatex
+date: "31/8/2021"
 abstract: I'll investigate what are the main factors that contribute to economic freedom
+output:
+  html_document: default
+  pdf_document: default
+abstract: Since the beginning of the globalization, national markets and economic systems have opened up, giving people the opportunity to exchange goods, capital and labor.
+Both the theory - starting from the Heckscher-Ohlin and Stolper-Samuelson theorems - and the empirical evidence have demonstrated the advantages of this process, 
+from the growth of national GDP and the value of trade to the reduction of extreme poverty. But what is "economic freedom" influenced by today? 
+What I was interested in was to discover the most relevant factors which affect economic freedom and to find a way to check their degree of influence, 
+taking into account several variables - which I thought could be relevant - from different sources as well as data from economic country profiles.
 ---
+
+##Data Description
+
+I found the dependant variable in the Economic Freedom Index computed by the Fraser Institute, which assigns a score after having analysed several other indicators from the records of each Country.
+The other variables were retrieved by sources and surveys led by international institutions such as the World Bank and the IMF. The following is the list of variables:
+
+We list below the full dataset we built: 
+
+- EFI: Economic Freedom Index: the score ranges from 0 to 100, with 
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+load library
+```{r setup, include=FALSE}
+library(car)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(readxl)
+library(ggpubr)
+library(ggplot2)
+library(Hmisc)
+library(olsrr)
+library(tidyverse)
+library(caret)
+library(Metrics)
+library(corrplot)
+library(glmnet)
+library(leaps)
+library(class)
+library(selectiveInference)
+library(RCurl)
+library(tree)
+library(ISLR)
+library(plot3D)
+library(sjPlot)
+library(plotly)
+library(haven)
+library(corrplot)
+library(plyr)
+library(PerformanceAnalytics)
+library(gbm)
+library(randomForest)
+```
+
+```{r setup, include=FALSE}
+dataef <- read_excel("dataef.xlsx")
+
+data <- dataef %>%
+  mutate_if(is.numeric, round, digits = 1)
+str(data)
+```
+
+#Data exploration and visualisation for the main variable
+
+```{r setup, include=FALSE}
+summary(dataset$EFI)
+
+qqnorm(dataset$EFI)
+
+shapiro.test(datast$EFI)
+
+ggqqplot(dataset$EFI)
+
+ggdensity(dataset, x = "EFI", fill = "lightgray", title = "EFI distribution") +
+  stat_overlay_normal_density(color = "red", linetype = "dashed")
+```
+##Let's see if the log improves the algorithm
+
+```{r setup, include=FALSE}
+data$logEFI <- log(dataset$EFI)
+
+qqnorm(dataset$logEFI, main="logEFI")
+
+shapiro.test(dataset$logEFI)
+
+ggqqplot(dataset$logEFI)  #scatter
+
+ggdensity(dataset, x = "logEFI", fill = "lightgray", title = "logEFI distribution") +  #
+  stat_overlay_normal_density(color = "red", linetype = "dashed")
+```
+
+## distribution seems better without log
+
+```{r pressure, echo=FALSE}
+df <- subset(dataset, select = -logEFI)
+```
+
+Boxplot: Does EFI differ significantly for world regions?
+
+```{r pressure, echo=FALSE}
+boxEFI <- df %>%
+  ggplot(aes(x=Region,y=EFI, label = Country, color=Region))+
+  geom_boxplot(width=0.5)+
+  geom_text(check_overlap = T,
+            position=position_jitter(width=0.01))+
+  geom_hline(yintercept = mean(df$EFI), linetype = 2)+ 
+  ylim(0, 100)+
+  theme(legend.position="none") 
+
+boxEFI
+
+dfr <- data.frame(df, row.names = 1)
+
+Boxplot(EFI~Region, id=TRUE, data=dfr)
+
+ddply(dfr,~Region,summarise,mean=mean(EFI),sd=sd(EFI),n=length(EFI))
+```
+
+we see that europe stands well above the mean of the index, with the only exceptions of some eastern countries. #americas stands slightly above the mean, but countries are well divised: those of north america have an high EFI, whereas southern nations present low score. north africa and middle east stand exactly on the mean line. however, north-african countries score less than the mean whereas middle east presents countries with an higher index. finally, sub saharian africa and asia-pacific present EFI scores well below the mean line, but with positive exceptions: asia-pacific countries have an highly spread distribution, but the ones with better scores are Australia, Singapore, Hong Kong and New Zealand, with the rest of the mainland Asia below the mean. On the other hand, sub saharian africa has just a few outliers that stand above the mean score.
+
+compute now the correlation matrix with all the var
+
+```{r pressure, echo=FALSE}
+data <- dfr %>% select(2:24) #we create a df without character var
+
+res<-cor(data, use = "complete.obs")
+round(res, 3)
+
+symnum(res, abbr.colnames = FALSE)
+
+res2 <- rcorr(as.matrix(data, use = "complete.obs")) #this will contain also significance level
+res2
+
+res2$r
+
+res2$P
+```
+
+from just the data it's difficult to interpret the results, so let's do a corr plot
+
+```{r pressure, echo=FALSE}
+corrplot(res2$r, type="upper", order = "original", tl.cex = 0.75, tl.srt = 45, tl.col = "black", 
+         p.mat = res2$P, sig.level = 0.05, insig = "blank")
+
+chart.Correlation(data, histogram=TRUE, pch= 19, cex = 1.5)
+
+```
+
+It looks like the relevant vars are:
+
+now Regression: run with relevant var. we'll also do vif to test for multicollinearity
+
+```{r pressure, echo=FALSE}
+fullmodel <- lm(EFI~., data = data)
+summary(fullmodel)
+
+vif(fullmodel)
+sqrt(vif(fullmodel)) > 10
+sqrt(vif(fullmodel)) > 5
+```
+
+in both cases, no multi
+
+now fit model of reg on random train set to see if resid are normally distributed
+
+```{r pressure, echo=FALSE}
+
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x))) 
+}
+dt <- as.data.frame(lapply(data, normalize))
+
+set.seed(123)
+train = sample(1:nrow(dt), 0.7*nrow(dt))
+dt_train = dt[train,-1]
+dt_test = dt[-train,-1]
+dt_train_labels <- dt[train, 1]
+dt_test_labels <- dt[-train, 1]
+
+fmtrain = lm(EFI~., data = dt[train,]) 
+fmtrain
+
+ols_plot_resid_fit(fmtrain)
+ols_plot_resid_hist(fmtrain)
+```
+
+normally distributed. check rmse
+
+```{r pressure, echo=FALSE}
+pred_ols <- predict(fmtrain, dt[-train,])
+ggplot(dt_test, aes(x=pred_ols, y=dt_test_labels)) + 
+  geom_point() +
+  geom_abline(intercept=0, slope=1) +
+  labs(x='Predicted Values', y='Actual Values', title='Predicted vs. Actual Values')
+
+root_mse = rmse(dt_test_labels, pred_ols)
+root_mse
+```
+
+subset selection
+
+first model: stepwise
+
+```{r pressure, echo=FALSE}
+regfit.fwd=regsubsets(EFI~.,data=data,method="forward")
+summary(regfit.fwd)
+
+plot(regfit.fwd,scale="Cp")
+```
+
+lasso
+
+```{r pressure, echo=FALSE}
+x=model.matrix(EFI~.-1,data=data)
+y=data$EFI
+
+fit.lasso=glmnet(x,y)
+plot(fit.lasso,xvar="lambda",label=TRUE)
+
+cv.lasso=cv.glmnet(x,y)
+plot(cv.lasso)
+
+lasso.tr=glmnet(x[train,],y[train])
+lasso.tr
+
+pred=predict(lasso.tr,x[-train,])
+dim(pred)
+
+rmse= sqrt(apply((y[-train]-pred)^2,2,mean))
+plot(log(lasso.tr$lambda),rmse,type="b",xlab="Log(lambda)")
+
+lam.best=lasso.tr$lambda[order(rmse)[1]]
+lam.best  #lower than rmse
+
+coef(lasso.tr,s=lam.best)
+
+sigma = estimateSigma(x,y)$sigmahat
+
+beta = coef(lasso.tr, x=x, y=y, s=lam.best/164, exact = TRUE)[-1]
+
+out_lasso_inf = fixedLassoInf(x,y,beta,lam.best,sigma=sigma)
+out_lasso_inf
+```
+
+the last one is boosting
+
+```{r pressure, echo=FALSE}
+efiboost=gbm(EFI~.,data=dt[train,],distribution="gaussian",n.trees=10000,shrinkage=0.01, interaction.depth=4)
+par(mar = c(5, 8, 1, 1))
+summary(efiboost, cBars = 10,las = 2)
+
+par(mfrow=c(1,1))
+plot(efiboost,i="PropertyRights")
+plot(efiboost,i="JudicalEffectiveness")
+
+
+n.trees=seq(from=100,to=10000,by=100)
+predmat=predict(efiboost,newdata =dt[-train,],n.trees=n.trees)
+dim(predmat)
+mean(predmat)
+
+test.err=double(13)
+berr=with(dt[-train,],apply( (predmat-EFI)^2,2,mean))
+plot(n.trees,berr,pch=19,ylab="Mean Squared Error", xlab="# Trees",main="Boosting Test Error")
+abline(h=min(test.err),col="red")
+
+adjboost =gbm(EFI~.,data=dt[train,],distribution="gaussian",n.trees=600,shrinkage=0.01, interaction.depth=4)
+par(mar = c(5, 8, 1, 1))
+summary(adjboost, cBars = 10,las = 2)
 ```
