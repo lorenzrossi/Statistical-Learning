@@ -1,0 +1,366 @@
+---
+title: "Supervised Learning"
+author: "Lorenzo Rossi"
+date: "31/8/2021"
+abstract: I'll investigate what are the main factors that contribute to economic freedom
+output:
+  html_document: default
+  pdf_document: default
+abstract: What is "economic freedom" influenced by today? 
+What I was interested in was to discover the most relevant factors which affect economic freedom and to find a way to check their degree of influence, 
+taking into account several variables - which I thought could be relevant - from different sources as well as data from economic country profiles.
+---
+
+#Problem Understanding
+
+Since the beginning of the globalization, national markets and economic systems have opened up, giving people the opportunity to exchange goods, capital and labor.
+Both the theory - starting from the Heckscher-Ohlin and Stolper-Samuelson theorems - and the empirical evidence have demonstrated the advantages of this process, 
+from the growth of national GDP and the value of trade to the reduction of extreme poverty. At the same time, however, the presence of the State as a regulator of the economy is arising again in these years, both on political and academic level.
+Is the economy efficient without State intervention unless in periods of deep crisis or does it needs to be a constant presence in order to avoid any disruption of society that markets can cause?
+I collected thata from different sources and performed different statistical learning methods in order to understand what are the main factors that lead to economic prosperity.
+These methods include OLS, Stepwise forward, Lasso and Boosting.
+
+##Data Description
+
+I found the dependant variable in the Economic Freedom Index computed by the Fraser Institute <https://www.fraserinstitute.org/sites/default/files/economic-freedom-of-the-world-2020.pdf>, which assigns a score after having analysed several other indicators from the records of each Country.
+The other variables were retrieved by sources and surveys led by international institutions such as the World Bank and the World Economic Forum. The following is the list of variables:
+
+- EFI: Economic Freedom Index: the score ranges from 0 to 100 and it was built by the Fraser Institute as explained in their website
+- Country: Country name
+- Region: geographical region 	
+- TariffRate: maximum tariff rate on exports/imports
+- IncomeTaxrate: maximum income tax rate (% of income)
+- CorpTaxrate: maximum corporate tax rate on profit (%)
+- TaxBurdenofGDP: the total tax revenues received as a percentage of GDP 
+- GovExpofGDP: public expenditure of the government compared to GDP (%)
+- GDPgrowth: the most recent growth or recession of GDP (%)	
+- Unemp: unemployment rate
+- Inf: the most recent inflation rate %
+- Debt: debt to GDP (%)
+- GDPpc: GDP per capita
+- GDPm: GDP in millions
+- PoPm: population	
+- FDI: foreign direct investments (in millions) to the current Country
+
+The values from the following variables were taken form the surveys contained in "World Competitiveness Report" by World Economic Forum <http://www3.weforum.org/docs/WEF_TheGlobalCompetitivenessReport2019.pdf> , and from World Bank's "Doing Business" <https://www.doingbusiness.org/en/doingbusiness> report.
+Values were assigned according to either surveys on population or analysis on the Country's legal and socio-economic framework.
+
+- MilitaryInterference: a measure of the military’s involvement in politics: the higher the rating, the less is military interference in institutions and government.  
+- NonTariffTradeBarriers: how much non-tariff barriers reduce the ability of imported goods to compete in the domestic market: lower scores indicate high presence of such barriers. 	
+- FreedomForeigners: the percentage of countries for which a country requires a visa from foreign visitors
+- OwnershipOfBanks:	measure for the share of bank deposits held in privately owned banks. Countries with larger shares of privately held deposits received higher ratings.
+- CreditRegulations: an indicator of banking efciency as well as a measure of independence from government control and interference in the financial sector. higher ratings are associated to easier access to credit.	
+- StartingBusiness: a measure for the amount of time and money it takes to start a new limited liability business. Countries where it takes longer or is more costly to start a new business are given lower ratings
+- PropertyRights: a measure of the degree to which a country’s laws protect private propertyrights and the extent to which those laws are respected: high scores indicate high level of property rights protection
+- JudicialEffectiveness: judicial effectiveness requires efficient and fair judicial systems to ensure that laws are fully respected: the higher the score, the more the legal system is efficient	
+- GovIntegrity: a measure for corruption and instability of the government: the higher the score, the higher government's stability and transparency
+
+
+load library
+
+```{r setup, include=FALSE}
+library(car)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(readxl)
+library(ggpubr)
+library(ggplot2)
+library(Hmisc)
+library(olsrr)
+library(tidyverse)
+library(caret)
+library(Metrics)
+library(corrplot)
+library(glmnet)
+library(leaps)
+library(class)
+library(selectiveInference)
+library(RCurl)
+library(tree)
+library(ISLR)
+library(plot3D)
+library(sjPlot)
+library(plotly)
+library(haven)
+library(corrplot)
+library(plyr)
+library(PerformanceAnalytics)
+library(gbm)
+library(randomForest)
+```
+
+```{r, out.width="50%", fig.align="center"}
+dataef <- read_excel("dataef.xlsx")
+
+dataset <- dataef %>%
+  mutate_if(is.numeric, round, digits = 1)
+str(dataset)
+```
+
+#Data exploration and visualisation 
+
+Starting with the exploration and analysis of our dependent variable.
+The mean is 61.27.
+
+###Shapiro test and QQ-plot
+Computing the Shapiro-Wilk test in order to test the null hypothesis of normality. It's accepted, so there's no need to transform the data.
+The subsequent QQ-plot shows that almost all the values fall approximately along the reference line, so it's safe to assume the normality of the AQI variable. 
+This assumption allows to work with statistical hypothesis tests that assume that the data follow a Normal distribution, and also to met the Central Limit Theorem assumptions and the normality of the residuals to build a regression model. 
+
+
+```{r message=FALSE, out.width="50%", fig.align="center"}
+summary(dataset$EFI)
+
+qqnorm(dataset$EFI)
+
+shapiro.test(dataset$EFI)
+
+ggqqplot(dataset$EFI)
+
+ggdensity(dataset, x = "EFI", fill = "lightgray", title = "EFI distribution") +
+  stat_overlay_normal_density(color = "red", linetype = "dashed")
+```
+###Regional Boxplots
+The visual analysis consistis in building boxplots to see how EFI differ in world regions
+
+```{r message=FALSE, out.width="50%", fig.align="center"}
+boxEFI <- dataset %>%
+  ggplot(aes(x=Region,y=EFI, label = Country, color=Region))+
+  geom_boxplot(width=0.5)+
+  geom_text(check_overlap = T,
+            position=position_jitter(width=0.01))+
+  geom_hline(yintercept = mean(dataset$EFI), linetype = 2)+ 
+  ylim(0, 100)+
+  theme(legend.position="none") 
+
+boxEFI
+
+dfr <- data.frame(dataset, row.names = 1)
+
+Boxplot(EFI~Region, id=TRUE, data=dfr)
+
+ddply(dfr,~Region,summarise,mean=mean(EFI),sd=sd(EFI),n=length(EFI))
+```
+
+We see that europe stands well above the mean of the index, with the only exceptions of some eastern countries. 
+Americas stands slightly above the mean, but countries are well divised: those of north america have an high EFI, whereas southern nations present low score. 
+North Africa and Middle East stand exactly on the mean line. however, north-african Countries score less than the mean whereas middle east presents countries with an higher index.
+Finally, sub-saharian Africa and Asia-Pacific present EFI scores well below the mean line, but with positive exceptions: Asia-Pacific's Countries have an highly spread distribution, 
+but the ones with better scores are Australia, Singapore, Hong Kong and New Zealand, with the rest of the mainland Asia below the mean. 
+On the other hand, sub saharian africa has just a few outliers that stand above the mean score.
+
+###Correlation Matrix
+
+Now we'll take a look at the correlation matrix with all the variales to see their relation to each other, computing the correlation coefficients with their p-values as to check for the significance.
+
+
+```{r, out.width="50%", fig.align="center"}
+data <- dfr %>% select(2:24) #we create a df without character var
+
+res<-cor(data, use = "complete.obs")
+round(res, 3)
+
+symnum(res, abbr.colnames = FALSE)
+
+res2 <- rcorr(as.matrix(data, use = "complete.obs")) #this will contain also significance level
+```
+
+From just the data it's difficult to interpret the results, so we compute a corr-plot in order to get a better visual understanding.
+
+
+```{r, message=FALSE, out.width="60%", fig.align="center"}
+corrplot(res2$r, type="upper", order = "original", tl.cex = 0.75, tl.srt = 45, tl.col = "black", 
+         p.mat = res2$P, sig.level = 0.05, insig = "blank")
+
+```
+
+It looks like all variables have some sort of relation with EFI, with the exception of IncomeTaxRate, Unemployment, GDP and Population.
+Tariffrate present a strong negative relation: lower tariff rates increase trade and exchange of goods for lower prices, thus improving the economy. 
+This is explained also by the strongly positive relation with NonTariffTradeBarriers, which values increases with less trade regulations. The same happens with CreditRegulations and StartingBusiness
+Protection of Property Rights, Government Integrity, Judicial Efficiency and MilitaryInteference show all a strongly positive correlation, leading to the conclusion that en efficient judicial system and a stable government improve the state of economy.
+
+##Data Analysis for Supervised Learning
+
+##Model Selection
+The goal of a generic model is to maximize the accuracy of the prediction, especially controlling the variance, and make the analysis as interpretable as possible, removing irrelavant features. 
+To pursue these aims, I performe a subset selection, identifying the p predictors more related to the response variable EFI. 
+There are different models to obtain this best selection, each one with its pros and cons, and the ones we used in our analysis are presented in the following sections.
+
+###OLS Regression
+I started with the simplest way to construct a model: the Ordinary Least Square. In the full model the most significative variables seem to be PropertyRights, GovIntegrity, CreditRegulations and StartingBusiness with a positive sign, as expected.
+On the other hand, we have strongly negative coefficients with Debt, TariffRate and Government expenditure.
+
+But before reaching conclusions, it's important to control many things in our model of regression; one of the most important is the variance inflation factor (vif) which gives us insights into the variables which can be “dangerous” to what concern multicollinearity.
+According to Hair et al. (1995) the maximum acceptable level of vif is 10, whereas according to Ringle et al. (2015) the maximum acceptable level of vif is 5.
+
+
+```{r}
+fullmodel <- lm(EFI~., data = data)
+summary(fullmodel)
+
+vif(fullmodel)
+sqrt(vif(fullmodel)) > 10
+sqrt(vif(fullmodel)) > 5
+```
+
+in both cases, no multi
+
+now fit model of reg on random train set to see if resid are normally distributed
+
+```{r, include=FALSE}
+normalize <- function(x) {
+  return ((x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE)))}
+dt <- as.data.frame(lapply(data,normalize))
+```
+
+```{r, out.width="50%", fig.align="center"}
+set.seed(123)
+train = sample(1:nrow(dt), 0.7*nrow(dt))
+dt_train = dt[train,-1]
+dt_test = dt[-train,-1]
+dt_train_labels <- dt[train, 1]
+dt_test_labels <- dt[-train, 1]
+
+fmtrain <- lm(EFI~., data = dt[train,]) 
+fmtrain
+
+ols_plot_resid_fit(fmtrain)
+ols_plot_resid_hist(fmtrain)
+```
+
+Surprisingly, no variable seemmed to have "dangerous" effects both running the 10 and 5 threshold. So I continued with the analysis without removing any variable.
+Also, to give another chekc, I fitted the regression model on a random training set, and we can visualize that residuals are normally distributed.
+
+Residuals are also very close to the straight line of zeroes, thus indicating a low rmse.
+
+```{r}
+pred_ols <- predict(fmtrain, dt[-train,])
+ggplot(dt_test, aes(x=pred_ols, y=dt_test_labels)) + 
+  geom_point() +
+  geom_abline(intercept=0, slope=1) +
+  labs(x='Predicted Values', y='Actual Values', title='Predicted vs. Actual Values')
+
+root_mse = rmse(dt_test_labels, pred_ols)
+root_mse
+```
+
+#Stepwise Forward
+This method starts with an empty model and then it adds at each step the predictor that provides the greatest additional improvement, following this structure:
+
+1. we start with the null model which contains no predictors.
+2. then, for k = 1,.., p-1, it chooses the variable among the p - k still available that added the bigger improvement to the model. Again, the selection is made according to the smallest RSS or the best R^2.
+3. at the end, the best model among the k available is selected, according to appropriate variation of the training error (C~p, AIC, BIC, R^2) or using a validation set or cross-validation.
+This method presents clear computational advantages, but it’s not guaranteed to find the best subset selection among all the 2^p models containing p predictors.
+
+
+```{r}
+regfit.fwd=regsubsets(EFI~.,data=data,method="forward")
+summary(regfit.fwd)
+
+plot(regfit.fwd,scale="Cp")
+```
+
+###Lasso
+
+Tibshirani (1996) introduces the so called LASSO (Least Absolute Shrinkage and Selection Operator) model for the selection and shrinkage of parameters. 
+This model is very useful when we analyze big data. t shrinks the regression coefficients toward zero by penalizing the regression model with a penalty term called L1-norm, which is the sum of the absolute coefficients.
+In the case of lasso regression, the penalty has the effect of forcing some of the coefficient estimates, with a minor contribution to the model, to be exactly equal to zero. 
+This means that, lasso can be also seen as an alternative to the subset selection methods for performing variable selection in order to reduce the complexity of the model.
+As in ridge regression, selecting a good value of λ for the lasso is critical. One obvious advantage of lasso regression over ridge regression, is that it produces simpler and more interpretable models that incorporate only a reduced set of the predictors. 
+
+
+```{r}
+x=model.matrix(EFI~.-1,data=data)
+y=data$EFI
+
+fit.lasso=glmnet(x,y)
+plot(fit.lasso,xvar="lambda",label=TRUE)
+
+cv.lasso=cv.glmnet(x,y)
+plot(cv.lasso)
+```
+
+```{r}
+lasso.tr=glmnet(x[train,],y[train])
+lasso.tr
+
+pred=predict(lasso.tr,x[-train,])
+dim(pred)
+
+rmse= sqrt(apply((y[-train]-pred)^2,2,mean))
+plot(log(lasso.tr$lambda),rmse,type="b",xlab="Log(lambda)")
+
+lam.best=lasso.tr$lambda[order(rmse)[1]]
+lam.best  #lower than rmse
+
+coef(lasso.tr,s=lam.best)
+```
+
+```{r}
+sigma = estimateSigma(x,y)$sigmahat
+
+beta = coef(lasso.tr, x=x, y=y, s=lam.best/164, exact = TRUE)[-1]
+
+out_lasso_inf = fixedLassoInf(x,y,beta,lam.best,sigma=sigma)
+out_lasso_inf
+```
+
+Lasso shrinks the number of variables to 15, showing their coefficients.
+
+###Boosting
+
+Boosting is another approach to improve the predictions resulting from a decision tree. 
+Like bagging and random forests, it is a general approach that can be applied to many statistical learning methods for regression or classification.
+Boosting builds lots of smaller trees. Unlike random forests, each new tree in boosting tries to patch up the deficiencies of the current ensemble. It's a sequential process in which each next model which is generated is added so as to improve a bit from the previous model.
+Basically, boosting boosts the performance of a simple base-learner by iteratively shifting the focus towards problematic training observations that are difficult to predict.
+Just like other tree predictors, the thing with boosting is that every new tree added to the mix will do better than the previous tree.
+
+At the beginning. the choice of tree is pre-determined.
+
+```{r}
+efiboost=gbm(EFI~.,data=dt[train,],distribution="gaussian",n.trees=10000,shrinkage=0.01, interaction.depth=4)
+par(mar = c(5, 8, 1, 1))
+summary(efiboost, cBars = 10,las = 2)
+
+par(mfrow=c(1,1))
+plot(efiboost,i="PropertyRights")
+plot(efiboost,i="JudicalEffectiveness")
+```
+
+Having too many trees can lead to overfitting. We can use some cross-validation to select the appropriate number
+
+```{r}
+n.trees=seq(from=100,to=10000,by=100)
+predmat=predict(efiboost,newdata =dt[-train,],n.trees=n.trees)
+dim(predmat)
+mean(predmat)
+
+test.err=double(13)
+berr=with(dt[-train,],apply( (predmat-EFI)^2,2,mean))
+plot(n.trees,berr,pch=19,ylab="Mean Squared Error", xlab="# Trees",main="Boosting Test Error")
+abline(h=min(test.err),col="red")
+
+adjboost =gbm(EFI~.,data=dt[train,],distribution="gaussian",n.trees=600,shrinkage=0.01, interaction.depth=4)
+par(mar = c(5, 8, 1, 1))
+summary(adjboost, cBars = 10,las = 2)
+```
+
+
+from the cross validation approach, 600 seems the appropriate number of trees. However, we don't get particularly different results.
+The analysis shows that the most influencing variable is property rights, followed by juridical effectiveness and credit regulations.
+
+#Conclusions
+
+From the results that we got conducting these analysis, it's clear that less regulating intervention of the state on the economy improves the quality of the latter.
+Less trade barriers, Lower tariffs and taxation lead to a better state for the economy, which consequently improves the quality of life of citizens.
+However, the governmemnt has also its own role, which is to provide the most efficient legal and bureaucratic framework, in order to protect the rights of the citizens, ease any attempt to build economic activities
+and guarantee the respect of law.
+
+
+
+
+
+
+
+
